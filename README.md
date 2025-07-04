@@ -1,2 +1,2 @@
 # uaru-bot
-Ядро телеграм бота (DSL)
+Ядро (DSL) телеграм бота для чата t.me/unix_anarchy_link
