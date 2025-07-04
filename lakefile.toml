@@ -1,0 +1,10 @@
+name = "uaru-bot"
+version = "0.1.0"
+defaultTargets = ["uaru-bot"]
+
+[[lean_lib]]
+name = "UaruKernel"
+
+[[lean_exe]]
+name = "uaru-bot"
+root = "Main"
