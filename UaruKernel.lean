@@ -68,11 +68,16 @@ structure DeleteMessageAction where
   messageId : Nat := 0 
   deriving ToJson 
 
---- Возможные status:
--- unknown error
--- ok
+inductive ResponseStatus
+  | default
+  | ok
+  | error
+  | unknownCmd
+  | unknownStatus
+  deriving ToJson 
+
 structure IPCResponse where
-  status         : String := "unknown error"
+  status         : ResponseStatus := ResponseStatus.unknownStatus 
   sendMessage    : Option SendMessageAction := none 
   pinMessage     : Option PinMessageAction := none
   deleteMessage  : Option DeleteMessageAction := none
@@ -82,78 +87,29 @@ structure IPCResponse where
   deriving ToJson 
 ----------------------------------------
 
+
 def handleCommand (jsonStr : String) : String :=
   match Json.parse jsonStr >>= fromJson? with
   | .error e => s!"error parsing JSON: {e}"
-  | .ok (input : IPCInput) =>
-    match input.event, input.message.bind (fun x => x.text) with
+  | .ok (input : IPCInput) => 
+    match input.event, input.message.bind (·.text) with
     | some "message sent", some "/start" =>
         let resp : IPCResponse := {
-          status := "ok",
+          status : ResponseStatus := ResponseStatus.ok,
           sendMessage := some {
             text := "бот работает",
-            replyToId := input.message.bind (fun x => x.messageId)
+            replyToId := input.message.bind (·.messageId)
           }
         }
         toJson resp |>.compress
-    | some "message sent", some "/mute" =>
-        match input.message.bind (fun x => x.replyToMessage) >>= (fun x => x.fromUser) >>= (fun x => x.userId) with
-        | some uid =>
-            let resp : IPCResponse := {
-              status := "ok",
-              muteUser := some {
-                userId := uid,
-                duration := 240
-              }
-            }
-            toJson resp |>.compress
-        | none => toJson { status := "cannot mute (no userId)" : IPCResponse } |>.compress
-    | some "message sent", some "/unmute" =>
-        match input.message.bind (fun x => x.replyToMessage) >>= (fun x => x.fromUser) >>= (fun x => x.userId) with
-        | some uid =>
-            let resp : IPCResponse := {
-              status := "ok",
-              unmuteUser := some {
-                userId := uid
-              }
-            }
-            toJson resp |>.compress
-        | none => toJson { status := "cannot unmute (no userId)" : IPCResponse } |>.compress
-    | some "message sent", some "/ban" =>
-        match input.message.bind (fun x => x.replyToMessage) >>= (fun x => x.fromUser) >>= (fun x => x.userId) with
-        | some uid =>
-            let resp : IPCResponse := {
-              status := "ok",
-              banUser := some { userId := uid }
-            }
-            toJson resp |>.compress
-        | none => toJson { status := "cannot ban (no userId)" : IPCResponse } |>.compress
-    | some "message sent", some "/pin" =>
-        match input.message.bind (fun x => x.replyToMessage) >>= (fun x => x.messageId) with
-        | some mid =>
-            let resp : IPCResponse := {
-              status := "ok",
-              pinMessage := some { messageId := mid }
-            }
-            toJson resp |>.compress
-        | none => toJson { status := "cannot pin (no messageId)" : IPCResponse } |>.compress
-    | some "message sent", some "/delete" =>
-        match input.message.bind (fun x => x.replyToMessage) >>= (fun x => x.messageId) with
-        | some mid =>
-            let resp : IPCResponse := {
-              status := "ok",
-              deleteMessage := some { messageId := mid }
-            }
-            toJson resp |>.compress
-        | none => toJson { status := "cannot delete (no messageId)" : IPCResponse } |>.compress
-    | some "message sent", some unknownCmd =>
+    | some "message sent", _ =>
         let resp : IPCResponse := {
-          status := s!"unknown command: {unknownCmd}"
+          status := ResponseStatus.unknownCmd 
         }
         toJson resp |>.compress
     | _, _ =>
         let resp : IPCResponse := {
-          status := "unhandled input"
+          status := ResponseStatus.unknownStatus 
         }
         toJson resp |>.compress
 
