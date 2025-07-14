@@ -7,7 +7,28 @@ open Lean Json ToJson FromJson
 
 namespace UaruKernel
 
+
 ----------------------------------------
+inductive IPCLogLevel
+  | debug
+  | info
+  | warning
+  | error
+  deriving ToJson
+  
+structure IPCLog where
+  level : IPCLogLevel
+  msg : String
+  deriving ToJson
+----------------------------------------
+
+----------------------------------------
+inductive UpdateEvent 
+  | messageSent
+  | userJoined
+  | userLeft
+  deriving FromJson
+
 structure User where
   userId     : Option Nat := none
   firstName  : Option String := none
@@ -31,10 +52,8 @@ structure Message where
   isSticker      : Option Bool := none
   deriving FromJson
 
---- Возможные event:
--- message sent
 structure IPCInput where
-  event   : Option String := "empty"
+  event   : Option UpdateEvent := none
   message : Option Message := none
   date    : Option String := none
   deriving FromJson
@@ -43,8 +62,8 @@ structure IPCInput where
 
 ----------------------------------------
 structure SendMessageAction where
-  text       : String := "empty"
-  replyToId  : Option Nat := none 
+  text : String := "empty"
+  replyToId : Option Nat := none 
   deriving ToJson 
 
 structure BanUserAction where
@@ -69,15 +88,11 @@ structure DeleteMessageAction where
   deriving ToJson 
 
 inductive ResponseStatus
-  | default
-  | ok
   | error
-  | unknownCmd
-  | unknownStatus
+  | ok
   deriving ToJson 
-
-structure IPCResponse where
-  status         : ResponseStatus := ResponseStatus.unknownStatus 
+ 
+structure BotActions where
   sendMessage    : Option SendMessageAction := none 
   pinMessage     : Option PinMessageAction := none
   deleteMessage  : Option DeleteMessageAction := none
@@ -85,32 +100,62 @@ structure IPCResponse where
   unmuteUser     : Option UnmuteUserAction := none
   banUser        : Option BanUserAction := none 
   deriving ToJson 
+
+structure IPCResponse where
+  status : ResponseStatus
+  log : Option IPCLog := none
+  actions : Option BotActions := none
+  deriving ToJson 
 ----------------------------------------
 
 
 def handleCommand (jsonStr : String) : String :=
   match Json.parse jsonStr >>= fromJson? with
-  | .error e => s!"error parsing JSON: {e}"
+  | .error e => 
+    let resp : IPCResponse := {
+      log : IPCLog := {
+        level : IPCLogLevel := IPCLogLevel.error
+        msg : String := s!"error parsing JSON: {e}"
+      }
+      status : ResponseStatus := ResponseStatus.error
+    }
+    toJson resp |>.compress
   | .ok (input : IPCInput) => 
-    match input.event, input.message.bind (·.text) with
-    | some "message sent", some "/start" =>
+    match input.event with
+    | UpdateEvent.messageSent =>
+      match input.message.bind (·.text) with
+      | "/start" =>
         let resp : IPCResponse := {
           status : ResponseStatus := ResponseStatus.ok,
-          sendMessage := some {
-            text := "бот работает",
-            replyToId := input.message.bind (·.messageId)
+          log : IPCLog := {
+            level : IPCLogLevel := IPCLogLevel.info
+            msg : String := "/start command received"
+          }
+          actions : BotActions := {
+            sendMessage : SendMessageAction := {
+                text := "Бот работает",
+                replyToId := input.message.bind (·.messageId)
+            }
           }
         }
         toJson resp |>.compress
-    | some "message sent", _ =>
+      | _ =>
         let resp : IPCResponse := {
-          status := ResponseStatus.unknownCmd 
+          log : IPCLog := {
+            level : IPCLogLevel := IPCLogLevel.debug
+            msg : String := "Message unknown"
+          }
+          status := ResponseStatus.error 
         }
         toJson resp |>.compress
-    | _, _ =>
-        let resp : IPCResponse := {
-          status := ResponseStatus.unknownStatus 
-        }
-        toJson resp |>.compress
+    | _ =>
+      let resp : IPCResponse := {
+          log : IPCLog := {
+            level : IPCLogLevel := IPCLogLevel.warning
+            msg : String := "Unknown event type received"
+          }
+          status := ResponseStatus.error 
+      }
+      toJson resp |>.compress
 
 end UaruKernel
